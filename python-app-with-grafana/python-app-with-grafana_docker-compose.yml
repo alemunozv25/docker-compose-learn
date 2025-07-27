@@ -1,0 +1,115 @@
+services:
+  nginx:
+    build: ./nginx
+    depends_on:
+      - python_app
+    ports:
+      - "8090:8090" # Expose container port 8090 to the host
+    networks:
+      - app_network
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    command: 
+      - "--nginx.scrape-uri=http://nginx:8090/nginx_status" # Point to NGINX service
+    depends_on:
+      - nginx
+    ports:
+      - 9113:9113 # Expose exporter metrics port
+    networks:
+      # - grafana
+      - app_network
+
+  python_app:
+    build: ./python_app
+    volumes:
+      - app_data:/var/log
+    depends_on:
+      - redis
+    ports:
+      - "5001:5001" # Expose port 5001 for internal communication
+    networks:
+      - app_network
+
+  redis:
+    image: redis:latest
+    # volumes:
+    #   - app_data:/var/log
+    #   - redis_data:/data  # Optional: for data persistence
+    ports:
+      - "6379:6379" # Expose Redis port (optional, for direct access)
+    networks:
+      - app_network
+
+  redis-exporter:
+    image: bitnami/redis-exporter:latest
+    command: --redis.addr redis:6379 # Connects to the Redis service
+    depends_on:
+      - redis
+    ports:
+      - "9121:9121" # Exporter's default port
+    networks:
+      - app_network
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    ports:
+      - 9090:9090
+    networks:
+      # - grafana
+      - app_network
+
+  loki:
+    image: grafana/loki:3.5.2
+    command: 
+      - "-config.file=/etc/loki/local-config.yaml"
+    ports:
+      - 3100:3100
+    networks:
+      # - grafana
+      - app_network
+
+  promtail:
+    image: grafana/promtail:3.5.3
+    volumes:
+      - app_data:/var/log
+    networks:
+      # - grafana
+      - app_network
+
+  demo-db:
+    # image: grafana/tns-db:latest
+    image: grafana/tns-db:gtm-hackathon-3
+    ports:
+      - 8082:80
+    networks:
+      # - grafana
+      - app_network
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      - "GF_DEFAULT_APP_MODE=development"
+      - "GF_LOG_LEVEL=debug"
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin # grants admin role to anonymous access
+      - GF_AUTH_ANONYMOUS_ENABLED=true # removes login 1/2
+      - GF_AUTH_BASIC_ENABLED=false # removes login 2/2
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - 3000:3000
+    networks:
+      # - grafana
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  app_data: {}
