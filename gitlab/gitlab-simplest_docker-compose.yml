@@ -1,0 +1,40 @@
+services:
+  gitlab:
+    # image: gitlab/gitlab-ee:18.2.1-ee.0
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    restart: always
+    hostname: 'gitlab.test'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        gitlab_rails['gitlab_shell_ssh_port'] = 2424
+        letsencrypt['enable'] = false
+        external_url 'http://gitlab.test:8929'
+        nginx['listen_port'] = 80
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    ports:
+      - '8929:80'
+      - '8443:443'
+      - '2424:22'
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    depends_on:
+      - gitlab
+    restart: always
+    volumes:
+      - runner_config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock # For Docker executor
+    # environment:
+      # Optional: set specific shell or other environment variables
+      # - RUNNER_EXECUTOR=docker
+      # - DOCKER_IMAGE=ubuntu:latest
+
+volumes:
+  gitlab_config: {}
+  gitlab_logs: {}
+  gitlab_data: {}
+  runner_config: {}
