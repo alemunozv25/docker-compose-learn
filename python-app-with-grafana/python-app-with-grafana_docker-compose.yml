@@ -17,15 +17,14 @@ services:
     ports:
       - 9113:9113 # Expose exporter metrics port
     networks:
-      # - grafana
       - app_network
 
   python_app:
     build: ./python_app
-    volumes:
-      - app_data:/var/log
     depends_on:
       - redis
+    volumes:
+      - python_data:/var/log
     ports:
       - "5001:5001" # Expose port 5001 for internal communication
     networks:
@@ -33,9 +32,8 @@ services:
 
   redis:
     image: redis:latest
-    # volumes:
-    #   - app_data:/var/log
-    #   - redis_data:/data  # Optional: for data persistence
+    volumes:
+      - redis_data:/data  # Optional: for data persistence
     ports:
       - "6379:6379" # Expose Redis port (optional, for direct access)
     networks:
@@ -53,33 +51,44 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.55.0
+    depends_on:
+      - redis-exporter
+      - nginx-exporter
+      - python_app
     volumes:
-      - ./prometheus/:/etc/prometheus/
+      - ./prometheus/:/etc/prometheus/  #Mount local prometheus dir content in /etc/prometheus
+      # - prometheus_data:/prometheus # Optional: for persistent data storage
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
     ports:
       - 9090:9090
     networks:
-      # - grafana
       - app_network
 
   loki:
     image: grafana/loki:3.5.2
     command: 
       - "-config.file=/etc/loki/local-config.yaml"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml #Mount local loki-config.yml and use it as Loki config file
+      # - ./loki-config.yml:/etc/loki/loki-config.yaml
     ports:
       - 3100:3100
     networks:
-      # - grafana
       - app_network
 
   promtail:
     image: grafana/promtail:3.5.3
+    # user: "0:0"  # Run as root to ensure access
+    command: 
+      - "-config.file=/etc/promtail/config.yml"
     volumes:
-      - app_data:/var/log
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml #Mount local promtail-config.yml and use it as Promtail config file
+      # - ./promtail-config.yml:/etc/promtail/promtail-config.yaml
+      # - promtail_logs:/var/log # Example for collecting system logs
+      # - /var/lib/docker/containers:/var/lib/docker/containers # For Docker container logs
     networks:
-      # - grafana
       - app_network
 
   demo-db:
@@ -88,7 +97,6 @@ services:
     ports:
       - 8082:80
     networks:
-      # - grafana
       - app_network
 
   grafana:
@@ -99,12 +107,14 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin # grants admin role to anonymous access
       - GF_AUTH_ANONYMOUS_ENABLED=true # removes login 1/2
       - GF_AUTH_BASIC_ENABLED=false # removes login 2/2
+    depends_on:
+      - prometheus
     volumes:
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources #Mount local datasources.yaml and use it as Grafana Datasoruces config file
     ports:
       - 3000:3000
     networks:
-      # - grafana
       - app_network
 
 networks:
@@ -112,4 +122,9 @@ networks:
     driver: bridge
 
 volumes:
-  app_data: {}
+  python_data: {}
+  grafana_data: {}
+  redis_data: {}
+  promtail_logs: {}
+  prometheus_data: {}
+
