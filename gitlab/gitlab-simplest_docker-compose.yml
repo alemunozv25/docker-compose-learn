@@ -11,6 +11,10 @@ services:
         letsencrypt['enable'] = false
         external_url 'http://gitlab.test:8929'
         nginx['listen_port'] = 80
+        logrotate['enable'] = true
+        logging['logrotate_frequency'] = "daily"
+        logging['logrotate_rotate'] = 1
+        logging['logrotate_compress'] = "compress"
     volumes:
       - gitlab_config:/etc/gitlab
       - gitlab_logs:/var/log/gitlab
@@ -19,6 +23,8 @@ services:
       - '8929:80'
       - '8443:443'
       - '2424:22'
+    networks:
+      - gitlab_net
   gitlab-runner:
     image: gitlab/gitlab-runner:latest
     container_name: gitlab-runner
@@ -28,13 +34,20 @@ services:
     volumes:
       - runner_config:/etc/gitlab-runner
       - /var/run/docker.sock:/var/run/docker.sock # For Docker executor
-    # environment:
-      # Optional: set specific shell or other environment variables
-      # - RUNNER_EXECUTOR=docker
-      # - DOCKER_IMAGE=ubuntu:latest
+    #environment:
+    # Optional: set specific shell or other environment variables
+    # - CI_SERVER_URL: 'http://gitlab.test:80'
+    # - RUNNER_EXECUTOR=docker
+    # - DOCKER_IMAGE=ubuntu:latest
+    networks:
+      - gitlab_net
 
 volumes:
   gitlab_config: {}
   gitlab_logs: {}
   gitlab_data: {}
   runner_config: {}
+
+networks:
+  gitlab_net:
+    driver: bridge
