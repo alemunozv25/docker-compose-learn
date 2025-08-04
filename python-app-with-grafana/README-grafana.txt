@@ -10,6 +10,8 @@ docker-compose -f python-app-with-grafana_docker-compose.yml up -d --no-deps --b
 docker-compose -f python-app-with-grafana_docker-compose.yml up -d --no-deps --build --force-recreate grafana
 docker-compose -f python-app-with-grafana_docker-compose.yml up -d --no-deps --build --force-recreate redis
 docker-compose -f python-app-with-grafana_docker-compose.yml up -d --no-deps --build --force-recreate redis-exporter
+docker-compose -f python-app-with-grafana_docker-compose.yml up -d --no-deps --build --force-recreate loki
+docker-compose -f python-app-with-grafana_docker-compose.yml up -d --no-deps --build --force-recreate promtail
 
 
 .Stop services configured in docker-compose configuration file
