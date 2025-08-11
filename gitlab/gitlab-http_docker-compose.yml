@@ -1,0 +1,74 @@
+services:
+  gitlab:
+    # image: gitlab/gitlab-ee:18.2.1-ee.0
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    restart: always
+    hostname: 'gitlab.test'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        gitlab_rails['gitlab_shell_ssh_port'] = 2424
+        letsencrypt['enable'] = false
+        external_url 'http://gitlab.test:8929'
+        nginx['listen_port'] = 80
+        gitlab_rails['registry_enabled'] = true
+        gitlab_rails['registry_port'] = "5000"
+        registry['enable'] = true
+        registry_external_url 'http://gitlab.test:5500'           # Alternate to port 5000 which is generally taken in MacOS by AirPlay Receiver
+        registry['registry_http_addr'] = "0.0.0.0:5000"
+        logrotate['enable'] = true
+        logging['logrotate_frequency'] = "daily"
+        logging['logrotate_rotate'] = 1
+        logging['logrotate_compress'] = "compress"
+        gitlab_rails['env'] = { "GITLAB_LOG_LEVEL" => "WARN", };  # Main log level for all components. Other options: INFO, WARN, ERROR, DEBUG
+        gitlab_workhorse['log_level'] = 'warn'                    # Individual components log level. Other options 'info', 'debug', 'error', 'fatal'
+        gitlab_shell['log_level'] = 'WARN'
+        nginx['error_log_level'] = "error"
+        registry['log_level'] = "warn"
+        gitlab_kas['grpc_log_level'] = 'error'
+        gitaly['configuration'] = { logging: { level: "warn" } }
+        sidekiq['log_level'] = 'warn'
+        patroni['log_level'] = 'WARN'
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    ports:
+      - '8929:80'        # Host external http port to container port.  Used together with "external_url" option in GITLAB_OMNIBUS_CONFIG.
+      - '8443:443'       # Host external https port to container port.  Used together with "external_url" option in GITLAB_OMNIBUS_CONFIG.
+      - '2424:22'        # Host external ssh port to container port.  Used together with "gitlab_shell_ssh_port" option in GITLAB_OMNIBUS_CONFIG.
+      - '5500:5000'      # Host external registry port to container port (if enabled). Used together with "registry_external_url" option in GITLAB_OMNIBUS_CONFIG. 
+    networks:
+      - gitlab_net
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    depends_on:
+      - gitlab
+    restart: always
+    volumes:
+      - runner_config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock # For Docker executor
+    environment:
+    #Optional: set specific shell or other environment variables
+      - CI_SERVER_URL='http://gitlab.test'
+      - CLONE_URL=http://gitlab.test:80'         #For Docker Executor, if issues arise during build. CLI option is "gitlab-runner register ... --clone-url <VALUE>"
+      - RUNNER_EXECUTOR=docker                   #Define Default type of Executor
+      - DOCKER_IMAGE=alpine:3.22                 #Define Default image for Executor
+      - DOCKER_NETWORK_MODE="gitlab_gitlab_net"  #For Docker Executor, the custom network needs to be specified. CLI option is "gitlab-runner register ... --docker-network-mode <VALUE>"
+      - FF_ENABLE_JOB_CLEANUP=true
+      - FF_NETWORK_PER_BUILD=false
+      - FF_TIMESTAMPS=false
+    networks:
+      - gitlab_net
+
+volumes:
+  gitlab_config: {}
+  gitlab_logs: {}
+  gitlab_data: {}
+  runner_config: {}
+
+networks:
+  gitlab_net:
+    driver: bridge
