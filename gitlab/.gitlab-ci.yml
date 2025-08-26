@@ -1,0 +1,137 @@
+# Workflow rules are set at the top of the .gitlab-ci.yml.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"     # Control when merge request pipelines run. https://docs.gitlab.com/ci/yaml/workflow/
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS     # $CI_OPEN_MERGE_REQUESTS does not exist in initial commit before merge request is created
+      when: never
+    - if: $CI_COMMIT_BRANCH                                # $CI_COMMIT_BRANCH does not exist when creatting merge request (merge_request_event). Control when branch pipelines run
+    # - if: $CI_PIPELINE_SOURCE == "push"                    # Control when both branch pipelines and tag pipelines run.
+    # - if: $CI_COMMIT_TAG                                   # Control when tag pipelines run.
+
+stages:
+  - build
+  - test
+  - deploy
+
+pre_build-job:
+  stage: .pre
+  # This job can fail, and the pipeline will continue. Some variables may not be set depending on "push" vs "merge_request_event" / CI_OPEN_MERGE_REQUESTS / CI_COMMIT_BRANCH
+  allow_failure: true 
+  script:
+    - docker version
+    - echo "Showing variables for better understading"
+    - echo "${CI_REGISTRY:?}"
+    - echo "${CI_REGISTRY_IMAGE:?}"
+    - echo "${CI_REGISTRY_USER:?}"
+    - echo "${CI_REGISTRY_PASSWORD:?}"
+    - echo "${CI_JOB_TOKEN:?}"
+    - echo "${CI_DEFAULT_BRANCH:?}"
+    - echo "${CI_PIPELINE_SOURCE:?}"
+
+pre_build-job-merge_request_event:
+  stage: .pre
+  # This job can fail, and the pipeline will continue. Some variables may not be set depending on "push" vs "merge_request_event" / CI_OPEN_MERGE_REQUESTS / CI_COMMIT_BRANCH
+  allow_failure: true
+  rules:
+    - if: $CI_OPEN_MERGE_REQUESTS
+  script:
+    - echo "${CI_OPEN_MERGE_REQUESTS:?}"
+
+pre_build-job-commit_event:
+  stage: .pre
+  # This job can fail, and the pipeline will continue. Some variables may not be set depending on "push" vs "merge_request_event" / CI_OPEN_MERGE_REQUESTS / CI_COMMIT_BRANCH
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - echo "${CI_COMMIT_BRANCH:?}" 
+    - echo "${CI_COMMIT_REF_SLUG:?}"
+    - echo "${CI_COMMIT_SHA:?}"
+    - echo "${CI_COMMIT_SHORT_SHA:?}"
+
+build-job:
+  image: docker:24.0.5
+  stage: build
+  # If Docker socket binding is enabled via volumes = ["/var/run/docker.sock:/var/run/docker.sock", ...] 
+  # in gitlab-runner with Docker executor and docker images, then service docker:24.0.5-dind is not needed...
+  # Leaving DIND service setup does not seem to break anything, but it is recommended to disable it.
+  # services:
+  #   - name: docker:24.0.5-dind
+  #     alias: docker
+  #     command: ["--tls=false", "--insecure-registry=gitlab.test:5500", "--insecure-registry=gitlab.test:5000"]
+  variables:
+    IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+  before_script:
+    - docker version
+    - echo "${CI_PIPELINE_SOURCE:?}"
+  rules:
+    - changes:
+        - Dockerfile
+        - package.json
+        - node-web-server.js      
+      when: manual             # Require manual approval before building and adding into Registry when relevant files change
+  # NOTE: rules and only cannot be used together in same job. Preference should be given to rules.
+  # NEXT only operations works, but is the old way to perform the activities.
+  # only:
+  #   changes:
+  #     - Dockerfile
+  #     - package.json
+  #     - node-web-server.js
+  script:
+    - docker version
+    - echo "${CI_JOB_TOKEN:?}" | docker login "${CI_REGISTRY:?}" -u "${CI_REGISTRY_USER:?}" --password-stdin
+    - echo "Docker login was successful..."
+    - docker build -t gitlab.test:5500/it-infrastructure/empty-project/nodeversion/aleximage:"${CI_COMMIT_SHORT_SHA:?}" . 
+    - echo "Docker build and tag was successful..."
+    - docker push gitlab.test:5500/it-infrastructure/empty-project/nodeversion/aleximage:"${CI_COMMIT_SHORT_SHA:?}"
+    - echo "Docker push into registry was successful..."
+    - docker logout
+    - echo "Docker logout was successful..."
+  environment:
+    name: stage
+
+test-job1:
+  needs:  # Defined a "needs" relationship with build-job. Otherwise, test-job1 start without waiting for build-job 
+    - job: build-job
+      optional: true
+  stage: test
+  script:
+    - echo "This job tests something"
+    - sleep 10
+
+test-job2:
+  needs:  # Defined a "needs" relationship with test-job1. Otherwise, test-job1 and test-job2 start at the same time 
+    - test-job1
+  stage: test
+  script:
+    - echo "This job tests something, but takes more time than test-job1."
+    - echo "After the echo commands complete, it runs the sleep command for 20 seconds"
+    - echo "which simulates a test that runs 20 seconds longer than test-job1"
+    - sleep 15
+
+deploy-prod:
+  needs:  # Defined a "needs" relationship with test-job2
+    - test-job2
+  stage: deploy
+  script:
+    - echo "This job deploys into production environment from the $CI_COMMIT_BRANCH branch."
+    - docker version
+    - echo "${CI_JOB_TOKEN:?}" | docker login "${CI_REGISTRY:?}" -u "${CI_REGISTRY_USER:?}" --password-stdin
+    - echo "Docker login was successful..."
+    - docker build -t gitlab.test:5500/it-infrastructure/empty-project/nodeversion/aleximage:"${CI_COMMIT_SHORT_SHA:?}" -t gitlab.test:5500/it-infrastructure/empty-project/nodeversion/aleximage:latest . 
+    - echo "Docker build and tag was successful..."
+    - docker push gitlab.test:5500/it-infrastructure/empty-project/nodeversion/aleximage:"${CI_COMMIT_SHORT_SHA:?}"
+    - echo "Docker push with short SHA tag into registry was successful..."
+    - docker push gitlab.test:5500/it-infrastructure/empty-project/nodeversion/aleximage:latest
+    - echo "Docker push with latest tag into registry was successful..."
+    - docker logout
+    - echo "Docker logout was successful..."
+  environment:
+    name: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - Dockerfile
+        - package.json
+        - node-web-server.js 
+      when: manual             # Require manual approval before deploying to production environment while working with merge into $CI_DEFAULT_BRANCH
