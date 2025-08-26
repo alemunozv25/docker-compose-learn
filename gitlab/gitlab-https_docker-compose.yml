@@ -9,12 +9,14 @@ services:
       GITLAB_OMNIBUS_CONFIG: |
         gitlab_rails['gitlab_shell_ssh_port'] = 2424
         letsencrypt['enable'] = false
-        external_url 'http://gitlab.test:8929'
-        nginx['listen_port'] = 80
+        external_url 'https://gitlab.test:8443'
+        nginx['listen_port'] = 443
+        nginx['ssl_certificate'] = "/etc/gitlab/ssl/gitlab.test.crt"
+        nginx['ssl_certificate_key'] = "/etc/gitlab/ssl/gitlab.test.key"
         gitlab_rails['registry_enabled'] = true
         gitlab_rails['registry_port'] = "5000"
         registry['enable'] = true
-        registry_external_url 'http://gitlab.test:5500'           # Alternate to port 5000 which is generally taken in MacOS by AirPlay Receiver
+        registry_external_url 'https://gitlab.test:5500'           # Alternate to port 5000 which is generally taken in MacOS by AirPlay Receiver
         registry['registry_http_addr'] = "0.0.0.0:5000"
         logrotate['enable'] = true
         logging['logrotate_frequency'] = "daily"
@@ -31,6 +33,16 @@ services:
         patroni['log_level'] = 'WARN'
         gitlab_rails['monitoring_whitelist'] = ['127.0.0.0/8', '192.168.0.0/24', '172.20.0.0/16']
         prometheus['listen_address'] = '0.0.0.0:9990'
+        gitlab_rails['gitlab_kas_enabled'] = true
+        gitlab_rails['gitlab_kas_external_url'] = 'wss://gitlab.test:8443/-/kubernetes-agent/' # Replace with your GitLab external URL
+        gitlab_rails['gitlab_kas_internal_url'] = 'grpc://localhost:8153' # Default internal URL
+        gitlab_kas_external_url "wss://gitlab.test:8443/-/kubernetes-agent/"
+        gitlab_kas['enable'] = true
+        gitlab_kas['listen_address'] = '0.0.0.0:8150'
+        gitlab_kas['gitlab_address'] = 'https://gitlab.test:443'
+        gitlab_kas['env'] = {
+          'SSL_CERT_DIR' => '/etc/gitlab/ssl/'
+        }
     volumes:
       # - gitlab_config:/etc/gitlab
       - gitlab_data:/var/opt/gitlab
