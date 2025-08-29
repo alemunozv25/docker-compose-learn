@@ -1,0 +1,48 @@
+
+services:
+  bamboo:
+    image: atlassian/bamboo:latest # Or a specific version like atlassian/bamboo:9.0.0
+    container_name: bamboo_server
+    ports:
+      - "8085:8085" # Bamboo web UI
+      - "54663:54663" # Bamboo agent port (for remote agents)
+    volumes:
+      - bamboo_data:/var/atlassian/application-data/bamboo   # Persistent data volume
+      # - /var/run/docker.sock:/var/run/docker.sock            # Bind mount docker.sock for Docker in Docker
+    environment:
+      - JDBC_URL=jdbc:postgresql://postgres_db:5432/bamboo # Example for PostgreSQL
+      - JDBC_USER=bamboo_user
+      - JDBC_PASSWORD=bamboo_password
+    depends_on:
+      - postgres_db # If using a separate database service
+    restart: unless-stopped
+
+  postgres_db: # Example for a PostgreSQL database
+    image: postgres:14
+    container_name: bamboo_postgres
+    environment:
+      - POSTGRES_DB=bamboo
+      - POSTGRES_USER=bamboo_user
+      - POSTGRES_PASSWORD=bamboo_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  agent:
+    image: atlassian/bamboo-agent-base:latest # Or a specific version, e.g., atlassian/bamboo-agent-base:9.2
+    container_name: bamboo_agent
+    environment:
+      - BAMBOO_SERVER=http://bamboo:8085   # Replace with your Bamboo server address and port
+      - AGENT_NAME=my-remote-agent         # Optional: Give your agent a specific name
+      # - AGENT_AUTH_TOKEN=your_auth_token   # Optional: If remote agent authentication is enabled
+    depends_on:
+      - bamboo
+    volumes:
+      - bamboo_agent_data:/var/atlassian/application-data/bamboo-agent-home  # Persist agent data
+      - /var/run/docker.sock:/var/run/docker.sock                            # Mount Docker socket if the agent needs to run Docker commands
+    restart: unless-stopped
+
+volumes:
+  bamboo_data:
+  postgres_data:
+  bamboo_agent_data:
